@@ -1,0 +1,106 @@
+name: 32-Bit Ozel Linux ISO Derleyici
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-iso-32bit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gerekli Araclari Kur
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build git curl sassc
+
+      - name: 32-Bit ISO Yapisini Hazirla
+        run: |
+          mkdir my-distro-32 && cd my-distro-32
+          lb config --architecture i386 --linux-flavours 686-pae --distribution bookworm --binary-images iso-hybrid --archive-areas "main contrib non-free non-free-firmware"
+
+          mkdir -p config/package-lists
+          cat << 'EOF' > config/package-lists/custom.list.chroot
+          xfce4
+          xfce4-goodies
+          xfce4-whiskermenu-plugin
+          lightdm
+          gnome-software
+          gnome-software-plugin-flatpak
+          flatpak
+          packagekit
+          synaptic
+          gdebi
+          gnome-system-tools
+          calamares
+          calamares-settings-debian
+          firmware-linux
+          firmware-linux-nonfree
+          network-manager-gnome
+          locales-all
+          firefox-esr
+          vlc
+          gparted
+          git
+          gtk2-engines-murrine
+          gtk2-engines-pixbuf
+          EOF
+
+      - name: Windows 11 Temasi ve Ikonlarini Ekle
+        run: |
+          cd my-distro-32
+          mkdir -p config/includes.chroot/usr/share/themes
+          mkdir -p config/includes.chroot/usr/share/icons
+          
+          # Win11 Ikon Temasini Kur
+          git clone --depth=1 https://github.com /tmp/win11-icons
+          chmod +x /tmp/win11-icons/install.sh
+          /tmp/win11-icons/install.sh -d "$(pwd)/config/includes.chroot/usr/share/icons"
+          
+          # Windows 11 (Fluent) GTK Temasini Kur
+          git clone --depth=1 https://github.com /tmp/win11-theme
+          chmod +x /tmp/win11-theme/install.sh
+          /tmp/win11-theme/install.sh -d "$(pwd)/config/includes.chroot/usr/share/themes"
+
+      - name: Temayi Varsayilan Olarak Ayarla ve Flathub Ekle
+        run: |
+          cd my-distro-32
+          mkdir -p config/includes.chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
+          
+          # XFCE Varsayilan Tema ve Ikon Ayari
+          cat << 'EOF' > config/includes.chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xsettings" version="1.0">
+            <property name="Net" type="empty">
+              <property name="ThemeName" type="string" value="Fluent-Light"/>
+              <property name="IconThemeName" type="string" value="Win11"/>
+            </property>
+          </channel>
+          EOF
+
+          # Pencere Kenarliklari (Xfwm4) Ayari
+          cat << 'EOF' > config/includes.chroot/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="theme" type="string" value="Fluent-Light"/>
+            </property>
+          </channel>
+          EOF
+
+          # Uygulama Magazasi Icin Flathub Deposunu Tanimla
+          mkdir -p config/hooks/live
+          cat << 'EOF' > config/hooks/live/01-flathub.hook.chroot
+          #!/bin/sh
+          flatpak remote-add --if-not-exists flathub https://flathub.org || true
+          EOF
+          chmod +x config/hooks/live/01-flathub.hook.chroot
+
+      - name: 32-Bit ISO Dosyasini Derle
+        run: |
+          cd my-distro-32
+          sudo lb build
+
+      - name: ISO Dosyasini Yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ozel-Linux-32Bit-ISO
+          path: my-distro-32/*.iso
